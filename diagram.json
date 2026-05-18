@@ -40,13 +40,6 @@
             "attrs": { "i2cAddress": "0x3c" }
         },
         {
-            "type": "wokwi-potentiometer",
-            "id": "pot1",
-            "top": -375.7,
-            "left": -413,
-            "attrs": {}
-        },
-        {
             "type": "wokwi-buzzer",
             "id": "bz1",
             "top": -4.5,
@@ -78,9 +71,8 @@
         {
             "type": "wokwi-text",
             "id": "text1",
-            "top": -355.2,
-            "left": -364.8,
-            "rotate": 90,
+            "top": -403.2,
+            "left": -374.4,
             "attrs": { "text": "soil moisture" }
         },
         {
@@ -89,6 +81,14 @@
             "top": -230.4,
             "left": -278.4,
             "attrs": { "text": "water level sensor" }
+        },
+        {
+            "type": "wokwi-slide-potentiometer",
+            "id": "pot3",
+            "top": -388.6,
+            "left": -413.8,
+            "rotate": 180,
+            "attrs": { "travelLength": "30" }
         }
     ],
     "connections": [
@@ -113,15 +113,10 @@
         ["esp:27", "bz1:2", "orange", ["v-38.25", "h-105.6", "v316.8"]],
         ["dht1:VCC", "bb2:bp.2", "red", ["v28.8", "h163.2"]],
         ["dht1:GND", "bb1:tn.4", "black", ["v0", "h67.2", "v-153.6", "h86.4"]],
-        ["relay1:VCC", "bb1:tn.5", "red", ["h0"]],
-        ["relay1:GND", "bb1:tp.6", "black", ["h-57.6", "v9.2"]],
         ["relay1:IN", "esp:26", "cyan", ["v28.6", "h48"]],
         ["dht1:SDA", "esp:4", "green", ["v19.2", "h153.7", "v115.2", "h115.2"]],
         ["btn1:1.l", "esp:0", "gray", ["h-9.6", "v-153.6", "h19.2"]],
         ["btn1:2.r", "bb2:bn.18", "black", ["h0"]],
-        ["pot1:SIG", "esp:34", "#8f4814", ["v38.4", "h-144.4"]],
-        ["pot1:GND", "bb2:bn.19", "black", ["v307.2", "h-153.6"]],
-        ["pot1:VCC", "bb2:bp.21", "red", ["v259.2", "h-144.8"]],
         [
             "pot2:GND",
             "bb2:bn.24",
@@ -131,6 +126,16 @@
         ["pot2:VCC", "bb2:bp.20", "red", ["h-38.4", "v182.4", "h-174.4"]],
         ["pot2:SIG", "esp:35", "gold", ["h-96", "v-106.4", "h-124.8"]],
         ["bz1:1", "bb2:bn.6", "black", ["h19.2", "v-65.9"]],
+        ["relay1:GND", "bb1:tn.6", "black", ["h0"]],
+        ["relay1:VCC", "bb1:tp.5", "red", ["h0"]],
+        ["pot3:SIG", "esp:34", "violet", ["h24.4", "v63.2", "h-336"]],
+        [
+            "pot3:VCC",
+            "bb2:bp.21",
+            "red",
+            ["h14.8", "v67.2", "h-172.8", "v249.6", "h-136"]
+        ],
+        ["pot3:GND", "bb1:tn.24", "black", ["v-57.6", "h-254"]],
         ["esp:12", "bb1:16b.i", "", ["$bb"]],
         ["esp:13", "bb1:14b.i", "", ["$bb"]],
         ["esp:14", "bb1:17b.i", "", ["$bb"]],
@@ -170,5 +175,11 @@
         ["esp:D0", "bb2:11t.b", "", ["$bb"]],
         ["esp:CLK", "bb2:10t.b", "", ["$bb"]]
     ],
-    "dependencies": {}
+    "dependencies": {},
+    "serialMonitor": {
+        "collapse": false,
+        "convertEol": false,
+        "display": "auto",
+        "newline": "lf"
+    }
 }
