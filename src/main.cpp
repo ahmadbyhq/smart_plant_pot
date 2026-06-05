@@ -5,6 +5,7 @@
 // #include <Adafruit_SSD1306.h>
 #include <U8g2lib.h>
 #include <WiFi.h>
+#include <HTTPClient.h>
 
 // #include <FluxGarage_RoboEyes.h>
 
@@ -108,7 +109,7 @@ const int SOIL_WET_ADC = 870;
 
 // Water Level Calibration
 const int WATER_EMPTY_ADC = 1000;
-const int WATER_FULL_ADC  = 1700;
+const int WATER_FULL_ADC  = 1400;
 
 // SSID dan Password
 const char* WIFI_SSID = "SAPU";
@@ -152,6 +153,8 @@ void controlPump();
 void controlBuzzer();
 void printAlertState(AlertState state);
 void printSerialMonitor();
+String alertStateToString(AlertState state);
+void uploadMonitoring();
 
 void setup() {
     Serial.begin(115200);
@@ -208,11 +211,6 @@ void setup() {
         u8g2.drawStr(0, 36, "Offline Mode");
         u8g2.sendBuffer();
     }
-
-    Serial.println();
-    Serial.println("WiFi Connected");
-    Serial.println(WiFi.localIP());
-
 
     Serial.println("Setup selesai");
 
@@ -277,6 +275,8 @@ void loop() {
 
         if (changed.any())
         {
+            uploadMonitoring();
+
             applySnapshot(changed);
 
             printSerialMonitor();
@@ -289,6 +289,8 @@ void loop() {
     if(currentMillis - previousHeartbeatMillis >= heartbeatInterval)
     {
         previousHeartbeatMillis = currentMillis;
+
+        uploadMonitoring();
 
         Serial.println("\n[HEARTBEAT] System still running");
 
@@ -306,8 +308,8 @@ void readSensors() {
         waterSum += analogRead(WATER_LEVEL_PIN);
         delay(5);
     }
-    current.soilRaw  = soilSum  / 3;
-    current.waterRaw = waterSum / 3;
+    current.soilRaw  = soilSum  / 10;
+    current.waterRaw = waterSum / 10;
 
     current.soilPercent = constrain(
         map(current.soilRaw, SOIL_DRY_ADC, SOIL_WET_ADC, 0, 100), 0, 100
@@ -317,15 +319,15 @@ void readSensors() {
         map(current.waterRaw, WATER_EMPTY_ADC, WATER_FULL_ADC, 0, 100), 0, 100
     );
 
-    Serial.println("===== RAW ADC =====");
+    // Serial.println("===== RAW ADC =====");
 
-    Serial.print("Soil Raw  : ");
-    Serial.println(current.soilRaw);
+    // Serial.print("Soil Raw  : ");
+    // Serial.println(current.soilRaw);
 
-    Serial.print("Water Raw : ");
-    Serial.println(current.waterRaw);
+    // Serial.print("Water Raw : ");
+    // Serial.println(current.waterRaw);
 
-    Serial.println("===================");
+    // Serial.println("===================");
 }
 
 bool isValidReading() {
@@ -545,4 +547,107 @@ void printAlertState(AlertState state)
             Serial.println("CRITICAL");
             break;
     }
+}
+
+String alertStateToString(AlertState state)
+{
+    switch(state)
+    {
+        case AlertState::NORMAL:
+            return "NORMAL";
+
+        case AlertState::WARNING:
+            return "WARNING";
+
+        case AlertState::CRITICAL:
+            return "CRITICAL";
+    }
+
+    return "UNKNOWN";
+}
+
+void uploadMonitoring()
+{
+    if(WiFi.status() != WL_CONNECTED)
+    {
+        Serial.println("[HTTP] WiFi disconnected");
+        return;
+    }
+
+    HTTPClient http;
+
+    http.begin(
+        "http://IP_SERVER/smart-plant-pot/insert.php"
+    );
+
+    http.addHeader(
+        "Content-Type",
+        "application/json"
+    );
+
+    String payload = "{";
+
+    payload += "\"temperature\":";
+    payload += String(current.temperature, 1);
+
+    payload += ",\"humidity\":";
+    payload += String(current.humidity, 1);
+
+    payload += ",\"soil_raw\":";
+    payload += String(current.soilRaw);
+
+    payload += ",\"soil_percent\":";
+    payload += String(current.soilPercent);
+
+    payload += ",\"water_raw\":";
+    payload += String(current.waterRaw);
+
+    payload += ",\"water_percent\":";
+    payload += String(current.waterPercent);
+
+    payload += ",\"pump_status\":";
+    payload += (digitalRead(RELAY_PIN) == LOW ? "1" : "0");
+
+    payload += ",\"soil_alert\":\"";
+    payload += alertStateToString(soilAlert);
+    payload += "\"";
+
+    payload += ",\"water_alert\":\"";
+    payload += alertStateToString(waterAlert);
+    payload += "\"";
+
+    payload += ",\"temp_alert\":\"";
+    payload += alertStateToString(tempAlert);
+    payload += "\"";
+
+    payload += "}";
+
+    Serial.println("[HTTP] Payload:");
+    Serial.println(payload);
+
+    String response = "";
+
+    int httpCode = http.POST(payload);
+
+    if(httpCode > 0)
+    {
+        response = http.getString();
+
+        Serial.printf(
+            "[HTTP] Response Code: %d\n",
+            httpCode
+        );
+
+        Serial.println("[HTTP] Response:");
+        Serial.println(response);
+    }
+    else
+    {
+        Serial.printf(
+            "[HTTP] Request Failed: %s\n",
+            http.errorToString(httpCode).c_str()
+        );
+    }
+
+    http.end();
 }
