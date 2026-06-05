@@ -121,7 +121,7 @@ bool buzzerState = false;
 unsigned long buzzerStartMillis = 0;
 unsigned long buzzerPreviousMillis = 0;
 
-const unsigned long BUZZER_DURATION = 10000; // 10 detik
+const unsigned long BUZZER_DURATION = 5000; // 5 detik
 const unsigned long BUZZER_INTERVAL = 1000;  // 1 detik
 
 AlertState previousSoilAlert = AlertState::NORMAL;
@@ -130,10 +130,8 @@ AlertState previousWaterAlert = AlertState::NORMAL;
 const unsigned long heartbeatInterval = 300000UL;
 unsigned long previousHeartbeatMillis = 0;
 
-// Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE, /* clock=*/ OLED_SCL, /* data=*/ OLED_SDA);
 DHT dht(DHTPIN, DHTTYPE);
-// RoboEyes<Adafruit_SSD1306> roboEyes(display); 
 
 SensorReading  current;
 SensorSnapshot previous;
@@ -160,7 +158,6 @@ void setup() {
 
     pinMode(RELAY_PIN, OUTPUT);
     pinMode(BUZZER_PIN, OUTPUT);
-    // pinMode(BTN_RESET_WIFI, INPUT_PULLUP);
 
     digitalWrite(RELAY_PIN, HIGH);
     digitalWrite(BUZZER_PIN, LOW);
@@ -183,10 +180,33 @@ void setup() {
 
     Serial.print("Connecting WiFi");
 
-    while(WiFi.status() != WL_CONNECTED)
+    unsigned long wifiStartTime = millis();
+    const unsigned long WIFI_TIMEOUT = 30000; // 30 detik
+
+    while(
+        WiFi.status() != WL_CONNECTED &&
+        millis() - wifiStartTime < WIFI_TIMEOUT
+    )
     {
         delay(500);
         Serial.print(".");
+    }
+
+
+    if(WiFi.status() == WL_CONNECTED)
+    {
+        Serial.println();
+        Serial.println("WiFi Connected");
+        Serial.println(WiFi.localIP());
+    }
+    else
+    {
+        Serial.println();
+        Serial.println("[ERROR] WiFi Connection Timeout");
+        u8g2.clearBuffer();
+        u8g2.drawStr(0, 20, "WiFi Failed");
+        u8g2.drawStr(0, 36, "Offline Mode");
+        u8g2.sendBuffer();
     }
 
     Serial.println();
@@ -281,7 +301,7 @@ void readSensors() {
     current.humidity    = dht.readHumidity();
 
     long soilSum = 0, waterSum = 0;
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 10; i++) {
         soilSum  += analogRead(SOIL_MOISTURE_PIN);
         waterSum += analogRead(WATER_LEVEL_PIN);
         delay(5);
@@ -297,15 +317,15 @@ void readSensors() {
         map(current.waterRaw, WATER_EMPTY_ADC, WATER_FULL_ADC, 0, 100), 0, 100
     );
 
-    // Serial.println("===== RAW ADC =====");
+    Serial.println("===== RAW ADC =====");
 
-    // Serial.print("Soil Raw  : ");
-    // Serial.println(current.soilRaw);
+    Serial.print("Soil Raw  : ");
+    Serial.println(current.soilRaw);
 
-    // Serial.print("Water Raw : ");
-    // Serial.println(current.waterRaw);
+    Serial.print("Water Raw : ");
+    Serial.println(current.waterRaw);
 
-    // Serial.println("===================");
+    Serial.println("===================");
 }
 
 bool isValidReading() {
