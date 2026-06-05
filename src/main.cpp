@@ -1,8 +1,11 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <DHT.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
+// #include <Adafruit_GFX.h>
+// #include <Adafruit_SSD1306.h>
+#include <U8g2lib.h>
+#include <WiFi.h>
+
 // #include <FluxGarage_RoboEyes.h>
 
 #define OLED_SDA 21
@@ -14,7 +17,7 @@
 #define WATER_LEVEL_PIN 35
 #define RELAY_PIN 26
 #define BUZZER_PIN 27
-#define BTN_RESET_WIFI 0
+// #define BTN_RESET_WIFI 18
 
 #define DHTPIN 4
 #define DHTTYPE DHT22
@@ -23,12 +26,6 @@
 #define HUM_THRESHOLD   2.0f
 #define SOIL_THRESHOLD  3
 #define WATER_THRESHOLD 3 
-
-// #define FB_PATH_TEMP    "/smart-pot/temperature"
-// #define FB_PATH_HUM     "/smart-pot/humidity"
-// #define FB_PATH_SOIL    "/smart-pot/soilPercent"
-// #define FB_PATH_WATER   "/smart-pot/waterPercent"
-
 
 struct SensorReading {
     float temperature  = NAN;
@@ -58,7 +55,83 @@ struct ChangedFields {
     }
 };
 
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+struct MonitoringData
+{
+    float temperature;
+    float humidity;
+
+    int soilRaw;
+    int soilPercent;
+
+    int waterRaw;
+    int waterPercent;
+
+    bool pumpStatus;
+
+    unsigned long timestamp;
+};
+
+struct AlarmThreshold
+{
+    // Soil
+    int soilWarningPercent = 30;
+    int soilCriticalPercent = 20;
+
+    // Water Tank
+    int waterWarningPercent = 20;
+    int waterCriticalPercent = 10;
+
+    // Temperature
+    float tempHigh = 35.0;
+    float tempLow = 15.0;
+
+    // Humidity
+    float humLow = 30.0;
+};
+
+AlarmThreshold threshold;
+
+enum class AlertState
+{
+    NORMAL,
+    WARNING,
+    CRITICAL
+};
+
+AlertState soilAlert = AlertState::NORMAL;
+AlertState waterAlert = AlertState::NORMAL;
+AlertState tempAlert = AlertState::NORMAL;
+
+// Soil Moisture Calibration
+const int SOIL_DRY_ADC = 2490;
+const int SOIL_WET_ADC = 870;
+
+// Water Level Calibration
+const int WATER_EMPTY_ADC = 1000;
+const int WATER_FULL_ADC  = 1700;
+
+// SSID dan Password
+const char* WIFI_SSID = "SAPU";
+const char* WIFI_PASS = "korek111";
+
+// Variable Pengatur Buzzer
+bool buzzerActive = false;
+bool buzzerState = false;
+
+unsigned long buzzerStartMillis = 0;
+unsigned long buzzerPreviousMillis = 0;
+
+const unsigned long BUZZER_DURATION = 10000; // 10 detik
+const unsigned long BUZZER_INTERVAL = 1000;  // 1 detik
+
+AlertState previousSoilAlert = AlertState::NORMAL;
+AlertState previousWaterAlert = AlertState::NORMAL;
+
+const unsigned long heartbeatInterval = 300000UL;
+unsigned long previousHeartbeatMillis = 0;
+
+// Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE, /* clock=*/ OLED_SCL, /* data=*/ OLED_SDA);
 DHT dht(DHTPIN, DHTTYPE);
 // RoboEyes<Adafruit_SSD1306> roboEyes(display); 
 
@@ -68,22 +141,28 @@ SensorSnapshot previous;
 unsigned long previousSensorMillis = 0;
 const unsigned long sensorInterval = 2000;
 
+unsigned long buttonPressStart = 0;
+bool buttonHeld = false;
+
 void readSensors();
 bool isValidReading();
 ChangedFields detectChanges();
 void applySnapshot(const ChangedFields& changed);
-void printSerialMonitor(const ChangedFields& changed);
 void displayMonitoring(const ChangedFields& changed);
-// void uploadFirebase(const ChangedFields& changed);
+void evaluateAlerts();
+void controlPump();
+void controlBuzzer();
+void printAlertState(AlertState state);
+void printSerialMonitor();
 
 void setup() {
     Serial.begin(115200);
 
     pinMode(RELAY_PIN, OUTPUT);
     pinMode(BUZZER_PIN, OUTPUT);
-    pinMode(BTN_RESET_WIFI, INPUT_PULLUP);
+    // pinMode(BTN_RESET_WIFI, INPUT_PULLUP);
 
-    digitalWrite(RELAY_PIN, HIGH); //low level trigger
+    digitalWrite(RELAY_PIN, HIGH);
     digitalWrite(BUZZER_PIN, LOW);
 
     analogReadResolution(12);
@@ -93,19 +172,27 @@ void setup() {
 
     Wire.begin(OLED_SDA, OLED_SCL);
 
-    if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-        Serial.println(F("[ERROR] OLED tidak terdeteksi!"));
-        for (;;);
+    u8g2.begin();
+    u8g2.clearBuffer();					
+    u8g2.setFont(u8g2_font_ncenB08_tr); 
+    u8g2.drawStr(0, 20, "Smart Plant Pot");
+    u8g2.drawStr(0, 36, "Initializing...");
+    u8g2.sendBuffer();
+
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+    Serial.print("Connecting WiFi");
+
+    while(WiFi.status() != WL_CONNECTED)
+    {
+        delay(500);
+        Serial.print(".");
     }
 
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-    display.setCursor(0, 20);
-    display.println(" Smart Plant Pot");
-    display.setCursor(0, 36);
-    display.println("  Initializing...");
-    display.display();
+    Serial.println();
+    Serial.println("WiFi Connected");
+    Serial.println(WiFi.localIP());
+
 
     Serial.println("Setup selesai");
 
@@ -113,6 +200,8 @@ void setup() {
 
 void loop() {
     unsigned long currentMillis = millis();
+
+    controlBuzzer();
 
     if (currentMillis - previousSensorMillis >= sensorInterval) {
         previousSensorMillis = currentMillis;
@@ -125,15 +214,65 @@ void loop() {
             return;
         }
 
+                
+        evaluateAlerts();
+
+        if(
+            soilAlert == AlertState::CRITICAL &&
+            previousSoilAlert != AlertState::CRITICAL
+        )
+        {
+            buzzerActive = true;
+
+            buzzerStartMillis = millis();
+            buzzerPreviousMillis = millis();
+
+            buzzerState = true;
+
+            digitalWrite(BUZZER_PIN, HIGH);
+        }
+
+        if(
+            waterAlert == AlertState::CRITICAL &&
+            previousWaterAlert != AlertState::CRITICAL
+        )
+        {
+            buzzerActive = true;
+
+            buzzerStartMillis = millis();
+            buzzerPreviousMillis = millis();
+
+            buzzerState = true;
+
+            digitalWrite(BUZZER_PIN, HIGH);
+        }
+
+        previousSoilAlert = soilAlert;
+        previousWaterAlert = waterAlert;
+
+        controlPump();
+
         // Deteksi field mana saja yang berubah signifikan
         ChangedFields changed = detectChanges();
 
-        if (changed.any()) {
-            printSerialMonitor(changed);
-            displayMonitoring(changed);
-            // uploadFirebase(changed);
+        if (changed.any())
+        {
             applySnapshot(changed);
+
+            printSerialMonitor();
+
+            displayMonitoring(changed);
         }
+    }
+
+
+    if(currentMillis - previousHeartbeatMillis >= heartbeatInterval)
+    {
+        previousHeartbeatMillis = currentMillis;
+
+        Serial.println("\n[HEARTBEAT] System still running");
+
+        printSerialMonitor();
     }
 }
 
@@ -151,12 +290,22 @@ void readSensors() {
     current.waterRaw = waterSum / 3;
 
     current.soilPercent = constrain(
-        map(current.soilRaw, 3200, 1200, 0, 100), 0, 100
+        map(current.soilRaw, SOIL_DRY_ADC, SOIL_WET_ADC, 0, 100), 0, 100
     );
     
     current.waterPercent = constrain(
-        map(current.waterRaw, 0, 4095, 0, 100), 0, 100
+        map(current.waterRaw, WATER_EMPTY_ADC, WATER_FULL_ADC, 0, 100), 0, 100
     );
+
+    // Serial.println("===== RAW ADC =====");
+
+    // Serial.print("Soil Raw  : ");
+    // Serial.println(current.soilRaw);
+
+    // Serial.print("Water Raw : ");
+    // Serial.println(current.waterRaw);
+
+    // Serial.println("===================");
 }
 
 bool isValidReading() {
@@ -188,93 +337,192 @@ void applySnapshot(const ChangedFields& changed) {
     if (changed.waterPercent) previous.waterPercent = current.waterPercent;
 }
 
-void printSerialMonitor(const ChangedFields& changed) {
-    Serial.println("===== SMART PLANT MONITOR =====");
-    if (changed.temperature) {
-        Serial.print("Temperature : ");
-        Serial.print(current.temperature, 1);
-        Serial.println(" C  [UPDATE]");
-    }
-    if (changed.humidity) {
-        Serial.print("Humidity    : ");
-        Serial.print(current.humidity, 1);
-        Serial.println(" %  [UPDATE]");
-    }
-    if (changed.soilPercent) {
-        Serial.print("Soil        : ");
-        Serial.print(current.soilPercent);
-        Serial.println(" %  [UPDATE]");
-    }
-    if (changed.waterPercent) {
-        Serial.print("Water Level : ");
-        Serial.print(current.waterPercent);
-        Serial.println(" %  [UPDATE]");
-    }
-    Serial.println("===============================\n");
-}
-
 void displayMonitoring(const ChangedFields& changed) {
     float dispTemp  = changed.temperature  ? current.temperature  : previous.temperature;
     float dispHum   = changed.humidity     ? current.humidity     : previous.humidity;
     int   dispSoil  = changed.soilPercent  ? current.soilPercent  : previous.soilPercent;
     int   dispWater = changed.waterPercent ? current.waterPercent : previous.waterPercent;
 
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_ncenB08_tr);
 
-    display.setCursor(0, 0);
-    display.print("Temp : ");
-    display.print(dispTemp, 1);
-    display.print(" C");
-    if (changed.temperature) display.print(" *");
+    char buffer[32];
+    
+    sprintf(buffer, "Temp : %.1f C %s", dispTemp, changed.temperature ? "*" : "");
+    u8g2.drawStr(0, 10, buffer);
 
-    display.setCursor(0, 16);
-    display.print("Hum  : ");
-    display.print(dispHum, 1);
-    display.print(" %");
-    if (changed.humidity) display.print(" *");
+    sprintf(buffer, "Hum  : %.1f %% %s", dispHum, changed.humidity ? "*" : "");
+    u8g2.drawStr(0, 26, buffer);
 
-    display.setCursor(0, 32);
-    display.print("Soil : ");
-    display.print(dispSoil);
-    display.print(" %");
-    if (changed.soilPercent) display.print(" *");
+    sprintf(buffer, "Soil : %d %% %s", dispSoil, changed.soilPercent ? "*" : "");
+    u8g2.drawStr(0, 42, buffer);
 
-    display.setCursor(0, 48);
-    display.print("Water: ");
-    display.print(dispWater);
-    display.print(" %");
-    if (changed.waterPercent) display.print(" *");
+    sprintf(buffer, "Water: %d %% %s", dispWater, changed.waterPercent ? "*" : "");
+    u8g2.drawStr(0, 58, buffer);
 
-    display.display();
+    u8g2.sendBuffer();
 }
 
-// void uploadFirebase(const ChangedFields& changed) {
+void evaluateAlerts()
+{
+    // Soil
+    if(current.soilPercent <= threshold.soilCriticalPercent)
+    {
+        soilAlert = AlertState::CRITICAL;
+    }
+    else if(current.soilPercent <= threshold.soilWarningPercent)
+    {
+        soilAlert = AlertState::WARNING;
+    }
+    else
+    {
+        soilAlert = AlertState::NORMAL;
+    }
 
-//     /*
-//     if (changed.temperature) {
-//         if (!Firebase.setFloat(fbData, FB_PATH_TEMP, current.temperature))
-//             Serial.printf("[FB ERR] temp: %s\n", fbData.errorReason().c_str());
-//     }
-//     if (changed.humidity) {
-//         if (!Firebase.setFloat(fbData, FB_PATH_HUM, current.humidity))
-//             Serial.printf("[FB ERR] hum: %s\n", fbData.errorReason().c_str());
-//     }
-//     if (changed.soilPercent) {
-//         if (!Firebase.setInt(fbData, FB_PATH_SOIL, current.soilPercent))
-//             Serial.printf("[FB ERR] soil: %s\n", fbData.errorReason().c_str());
-//     }
-//     if (changed.waterPercent) {
-//         if (!Firebase.setInt(fbData, FB_PATH_WATER, current.waterPercent))
-//             Serial.printf("[FB ERR] water: %s\n", fbData.errorReason().c_str());
-//     }
-//     */
+    // Water Tank
+    if(current.waterPercent <= threshold.waterCriticalPercent)
+    {
+        waterAlert = AlertState::CRITICAL;
+    }
+    else if(current.waterPercent <= threshold.waterWarningPercent)
+    {
+        waterAlert = AlertState::WARNING;
+    }
+    else
+    {
+        waterAlert = AlertState::NORMAL;
+    }
 
-    // Serial.print("[Firebase] Would update:");
-    // if (changed.temperature)  Serial.print(" temperature");
-    // if (changed.humidity)     Serial.print(" humidity");
-    // if (changed.soilPercent)  Serial.print(" soilPercent");
-    // if (changed.waterPercent) Serial.print(" waterPercent");
-    // Serial.println();
-// }
+    // Temperature
+    if(current.temperature >= threshold.tempHigh)
+    {
+        tempAlert = AlertState::WARNING;
+    }
+    else
+    {
+        tempAlert = AlertState::NORMAL;
+    }
+}
+
+void controlPump()
+{
+    if(
+        soilAlert == AlertState::CRITICAL &&
+        waterAlert != AlertState::CRITICAL
+    )
+    {
+        digitalWrite(RELAY_PIN, LOW); // ON
+    }
+    else
+    {
+        digitalWrite(RELAY_PIN, HIGH); // OFF
+    }
+}
+
+void controlBuzzer()
+{
+    if(!buzzerActive)
+    {
+        digitalWrite(BUZZER_PIN, LOW);
+        return;
+    }
+
+    if(millis() - buzzerStartMillis >= BUZZER_DURATION)
+    {
+        buzzerActive = false;
+        digitalWrite(BUZZER_PIN, LOW);
+        return;
+    }
+
+    if(millis() - buzzerPreviousMillis >= BUZZER_INTERVAL)
+    {
+        buzzerPreviousMillis = millis();
+
+        buzzerState = !buzzerState;
+
+        digitalWrite(
+            BUZZER_PIN,
+            buzzerState
+        );
+    }
+}
+
+void printSerialMonitor()
+{
+    Serial.println("\n======================================");
+    Serial.println("      SMART PLANT POT MONITOR");
+    Serial.println("======================================");
+
+    Serial.printf("Temperature : %.1f C\n", current.temperature);
+    Serial.printf("Humidity    : %.1f %%\n", current.humidity);
+
+    Serial.printf(
+        "Soil        : %d %% (ADC: %d)\n",
+        current.soilPercent,
+        current.soilRaw
+    );
+
+    Serial.printf(
+        "Water Tank  : %d %% (ADC: %d)\n",
+        current.waterPercent,
+        current.waterRaw
+    );
+
+    Serial.println("--------------------------------------");
+
+    Serial.print("Soil Alert  : ");
+    printAlertState(soilAlert);
+
+    Serial.print("Water Alert : ");
+    printAlertState(waterAlert);
+
+    Serial.print("Temp Alert  : ");
+    printAlertState(tempAlert);
+
+    Serial.println("--------------------------------------");
+
+    Serial.printf(
+        "Pump Status : %s\n",
+        digitalRead(RELAY_PIN) == LOW ? "ON" : "OFF"
+    );
+
+    Serial.printf(
+        "Buzzer      : %s\n",
+        buzzerActive ? "ACTIVE" : "OFF"
+    );
+
+    Serial.printf(
+        "WiFi        : %s\n",
+        WiFi.status() == WL_CONNECTED ?
+        "CONNECTED" : "DISCONNECTED"
+    );
+
+    if(WiFi.status() == WL_CONNECTED)
+    {
+        Serial.printf(
+            "IP Address  : %s\n",
+            WiFi.localIP().toString().c_str()
+        );
+    }
+
+    Serial.println("======================================\n");
+    Serial.printf("Uptime      : %lu sec\n", millis() / 1000);
+}
+
+void printAlertState(AlertState state)
+{
+    switch(state)
+    {
+        case AlertState::NORMAL:
+            Serial.println("NORMAL");
+            break;
+
+        case AlertState::WARNING:
+            Serial.println("WARNING");
+            break;
+
+        case AlertState::CRITICAL:
+            Serial.println("CRITICAL");
+            break;
+    }
+}
