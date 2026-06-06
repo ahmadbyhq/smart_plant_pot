@@ -43,6 +43,14 @@ CREATE TABLE `monitoring_logs` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+
+CREATE TABLE `alert_logs` (
+  `id` bigint(20) NOT NULL,
+  `alert_type` varchar(20) NOT NULL,
+  `alert_level` varchar(20) NOT NULL,
+  `message` text NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 --
 -- Dumping data for table `monitoring_logs`
 --
@@ -58,6 +66,9 @@ ALTER TABLE `monitoring_logs`
   ADD PRIMARY KEY (`id`),
   ADD KEY `idx_created_at` (`created_at`);
 
+ALTER TABLE `alert_logs`
+  ADD PRIMARY KEY (`id`);
+
 --
 -- AUTO_INCREMENT for dumped tables
 --
@@ -68,6 +79,9 @@ ALTER TABLE `monitoring_logs`
 ALTER TABLE `monitoring_logs`
   MODIFY `id` bigint(20) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 COMMIT;
+
+ALTER TABLE `alert_logs`
+  MODIFY `id` bigint(20) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=32;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
