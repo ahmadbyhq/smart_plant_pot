@@ -38,6 +38,7 @@ CREATE TABLE `monitoring_logs` (
   `soil_alert` varchar(20) NOT NULL,
   `water_alert` varchar(20) NOT NULL,
   `temp_alert` varchar(20) NOT NULL,
+  `hum_alert` varchar(20) NOT NULL,
   `pump_status` tinyint(1) NOT NULL DEFAULT 0,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -45,14 +46,6 @@ CREATE TABLE `monitoring_logs` (
 --
 -- Dumping data for table `monitoring_logs`
 --
-
-INSERT INTO `monitoring_logs` (`id`, `temperature`, `humidity`, `soil_raw`, `soil_percent`, `water_raw`, `water_percent`, `soil_alert`, `water_alert`, `temp_alert`, `pump_status`, `created_at`) VALUES
-(1, 32, 77.1, 2446, 2, 1400, 57, 'CRITICAL', 'NORMAL', 'NORMAL', 1, '2026-06-05 16:37:07'),
-(2, 32, 75, 2400, 10, 1300, 50, 'CRITICAL', 'NORMAL', 'NORMAL', 1, '2026-06-05 17:12:13'),
-(3, 31.4, 76.4, 2459, 1, 0, 0, 'CRITICAL', 'CRITICAL', 'NORMAL', 0, '2026-06-05 17:33:29'),
-(4, 31.5, 76.6, 2384, 6, 1318, 79, 'CRITICAL', 'NORMAL', 'NORMAL', 1, '2026-06-05 17:34:50'),
-(5, 31.5, 76.5, 2419, 4, 1560, 100, 'CRITICAL', 'NORMAL', 'NORMAL', 1, '2026-06-05 17:34:52'),
-(6, 31.5, 76.4, 2382, 6, 156, 0, 'CRITICAL', 'CRITICAL', 'NORMAL', 0, '2026-06-05 17:35:00');
 
 --
 -- Indexes for dumped tables

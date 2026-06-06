@@ -32,13 +32,14 @@ $stmt = $conn->prepare("
         soil_alert,
         water_alert,
         temp_alert,
+        hum_alert,
         pump_status
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ");
 
 $stmt->bind_param(
-    "ddiiiisssi",
+    "ddiiiissssi",
     $data['temperature'],
     $data['humidity'],
     $data['soil_raw'],
@@ -48,6 +49,7 @@ $stmt->bind_param(
     $data['soil_alert'],
     $data['water_alert'],
     $data['temp_alert'],
+    $data['hum_alert'],
     $data['pump_status']
 );
 

@@ -83,11 +83,12 @@ struct AlarmThreshold
     int waterCriticalPercent = 10;
 
     // Temperature
-    float tempHigh = 35.0;
+    float tempHigh = 37.0;
     float tempLow = 15.0;
 
     // Humidity
-    float humLow = 30.0;
+    float humLow  = 30.0;
+    float humHigh = 80.0;
 };
 
 AlarmThreshold threshold;
@@ -102,14 +103,15 @@ enum class AlertState
 AlertState soilAlert = AlertState::NORMAL;
 AlertState waterAlert = AlertState::NORMAL;
 AlertState tempAlert = AlertState::NORMAL;
+AlertState humAlert = AlertState::NORMAL;
 
 // Soil Moisture Calibration
 const int SOIL_DRY_ADC = 2490;
 const int SOIL_WET_ADC = 870;
 
 // Water Level Calibration
-const int WATER_EMPTY_ADC = 1000;
-const int WATER_FULL_ADC  = 1400;
+const int WATER_EMPTY_ADC = 100;
+const int WATER_FULL_ADC  = 1000;
 
 // SSID dan Password
 const char* WIFI_SSID = "SAPU";
@@ -122,11 +124,13 @@ bool buzzerState = false;
 unsigned long buzzerStartMillis = 0;
 unsigned long buzzerPreviousMillis = 0;
 
-const unsigned long BUZZER_DURATION = 5000; // 5 detik
-const unsigned long BUZZER_INTERVAL = 1000;  // 1 detik
+const unsigned long BUZZER_DURATION = 3000; // 3 detik
+const unsigned long BUZZER_INTERVAL = 500;  // 1 detik
 
 AlertState previousSoilAlert = AlertState::NORMAL;
 AlertState previousWaterAlert = AlertState::NORMAL;
+AlertState previousTempAlert = AlertState:: NORMAL;
+AlertState previousHumAlert = AlertState:: NORMAL;
 
 const unsigned long heartbeatInterval = 300000UL;
 unsigned long previousHeartbeatMillis = 0;
@@ -162,7 +166,7 @@ void setup() {
     pinMode(RELAY_PIN, OUTPUT);
     pinMode(BUZZER_PIN, OUTPUT);
 
-    digitalWrite(RELAY_PIN, HIGH);
+    digitalWrite(RELAY_PIN, LOW);
     digitalWrite(BUZZER_PIN, LOW);
 
     analogReadResolution(12);
@@ -265,8 +269,40 @@ void loop() {
             digitalWrite(BUZZER_PIN, HIGH);
         }
 
+        if(
+            tempAlert == AlertState::WARNING &&
+            previousTempAlert != AlertState::WARNING
+        )
+        {
+            buzzerActive = true;
+
+            buzzerStartMillis = millis();
+            buzzerPreviousMillis = millis();
+
+            buzzerState = true;
+
+            digitalWrite(BUZZER_PIN, HIGH);
+        }
+
+        if(
+            humAlert == AlertState::WARNING &&
+            previousHumAlert != AlertState::WARNING
+        )
+        {
+            buzzerActive = true;
+
+            buzzerStartMillis = millis();
+            buzzerPreviousMillis = millis();
+
+            buzzerState = true;
+
+            digitalWrite(BUZZER_PIN, HIGH);
+        }
+
         previousSoilAlert = soilAlert;
         previousWaterAlert = waterAlert;
+        previousTempAlert = tempAlert;
+        previousHumAlert = humAlert;
 
         controlPump();
 
@@ -419,10 +455,27 @@ void evaluateAlerts()
     if(current.temperature >= threshold.tempHigh)
     {
         tempAlert = AlertState::WARNING;
+    } 
+    else if(current.temperature <= threshold.tempLow) {
+        tempAlert = AlertState::WARNING;
     }
     else
     {
         tempAlert = AlertState::NORMAL;
+    }
+
+    // Humidity
+    if(current.humidity <= threshold.humLow)
+    {
+        humAlert = AlertState::WARNING;
+    }
+    else if(current.humidity >= threshold.humHigh)
+    {
+        humAlert = AlertState::WARNING;
+    }
+    else
+    {
+        humAlert = AlertState::NORMAL;
     }
 }
 
@@ -433,11 +486,11 @@ void controlPump()
         waterAlert != AlertState::CRITICAL
     )
     {
-        digitalWrite(RELAY_PIN, LOW); // ON
+        digitalWrite(RELAY_PIN, HIGH); // ON
     }
     else
     {
-        digitalWrite(RELAY_PIN, HIGH); // OFF
+        digitalWrite(RELAY_PIN, LOW); // OFF
     }
 }
 
@@ -501,11 +554,14 @@ void printSerialMonitor()
     Serial.print("Temp Alert  : ");
     printAlertState(tempAlert);
 
+    Serial.print("Hum Alert  : ");
+    printAlertState(humAlert);
+
     Serial.println("--------------------------------------");
 
     Serial.printf(
         "Pump Status : %s\n",
-        digitalRead(RELAY_PIN) == LOW ? "ON" : "OFF"
+        digitalRead(RELAY_PIN) == HIGH ? "ON" : "OFF"
     );
 
     Serial.printf(
@@ -606,7 +662,7 @@ void uploadMonitoring()
     payload += String(current.waterPercent);
 
     payload += ",\"pump_status\":";
-    payload += (digitalRead(RELAY_PIN) == LOW ? "1" : "0");
+    payload += (digitalRead(RELAY_PIN) == HIGH ? "1" : "0");
 
     payload += ",\"soil_alert\":\"";
     payload += alertStateToString(soilAlert);
@@ -618,6 +674,10 @@ void uploadMonitoring()
 
     payload += ",\"temp_alert\":\"";
     payload += alertStateToString(tempAlert);
+    payload += "\"";
+
+    payload += ",\"hum_alert\":\"";
+    payload += alertStateToString(humAlert);
     payload += "\"";
 
     payload += "}";
