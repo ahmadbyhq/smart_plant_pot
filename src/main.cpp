@@ -1,13 +1,9 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <DHT.h>
-// #include <Adafruit_GFX.h>
-// #include <Adafruit_SSD1306.h>
 #include <U8g2lib.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
-
-// #include <FluxGarage_RoboEyes.h>
 
 #define OLED_SDA 21
 #define OLED_SCL 22
@@ -18,7 +14,6 @@
 #define WATER_LEVEL_PIN 35
 #define RELAY_PIN 26
 #define BUZZER_PIN 27
-// #define BTN_RESET_WIFI 18
 
 #define DHTPIN 4
 #define DHTTYPE DHT22
@@ -40,7 +35,7 @@ struct SensorReading {
 struct SensorSnapshot {
     float temperature  = NAN;
     float humidity     = NAN;
-    int   soilPercent  = -1;  // -1 = belum pernah ditampilkan
+    int   soilPercent  = -1;
     int   waterPercent = -1;
 };
 
@@ -88,7 +83,7 @@ struct AlarmThreshold
 
     // Humidity
     float humLow  = 30.0;
-    float humHigh = 80.0;
+    float humHigh = 85.0;
 };
 
 AlarmThreshold threshold;
@@ -106,16 +101,16 @@ AlertState tempAlert = AlertState::NORMAL;
 AlertState humAlert = AlertState::NORMAL;
 
 // Soil Moisture Calibration
-const int SOIL_DRY_ADC = 2490;
-const int SOIL_WET_ADC = 870;
+const int SOIL_DRY_ADC = 2320;
+const int SOIL_WET_ADC = 1380;
 
 // Water Level Calibration
 const int WATER_EMPTY_ADC = 100;
-const int WATER_FULL_ADC  = 1000;
+const int WATER_FULL_ADC = 1350;
 
 // SSID dan Password
-const char* WIFI_SSID = "SAPU";
-const char* WIFI_PASS = "korek111";
+const char* WIFI_SSID = "Galaxy M12";
+const char* WIFI_PASS = "PentolAnget";
 
 // Variable Pengatur Buzzer
 bool buzzerActive = false;
@@ -124,15 +119,15 @@ bool buzzerState = false;
 unsigned long buzzerStartMillis = 0;
 unsigned long buzzerPreviousMillis = 0;
 
-const unsigned long BUZZER_DURATION = 3000; // 3 detik
-const unsigned long BUZZER_INTERVAL = 500;  // 1 detik
+const unsigned long BUZZER_DURATION = 3000; // 3s
+const unsigned long BUZZER_INTERVAL = 300;  // 300ms
 
-AlertState previousSoilAlert = AlertState::NORMAL;
+// AlertState previousSoilAlert = AlertState::NORMAL;
 AlertState previousWaterAlert = AlertState::NORMAL;
-AlertState previousTempAlert = AlertState:: NORMAL;
-AlertState previousHumAlert = AlertState:: NORMAL;
+// AlertState previousTempAlert = AlertState:: NORMAL;
+// AlertState previousHumAlert = AlertState:: NORMAL;
 
-const unsigned long heartbeatInterval = 300000UL;
+const unsigned long heartbeatInterval = 300000UL; // 5 menit
 unsigned long previousHeartbeatMillis = 0;
 
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE, /* clock=*/ OLED_SCL, /* data=*/ OLED_SDA);
@@ -231,29 +226,31 @@ void loop() {
         readSensors();
 
         // Validasi
-        if (!isValidReading()) {
-            Serial.println("[WARN] Pembacaan sensor tidak valid, dilewati");
-            return;
-        }
+        // if (!isValidReading()) {
+        //     Serial.println("[WARN] Pembacaan sensor tidak valid, dilewati");
+        //     return;
+        // }
 
                 
         evaluateAlerts();
 
-        if(
-            soilAlert == AlertState::CRITICAL &&
-            previousSoilAlert != AlertState::CRITICAL
-        )
-        {
-            buzzerActive = true;
+        // // buzzer soil
+        // if(
+        //     soilAlert == AlertState::CRITICAL &&
+        //     previousSoilAlert != AlertState::CRITICAL
+        // )
+        // {
+        //     buzzerActive = true;
 
-            buzzerStartMillis = millis();
-            buzzerPreviousMillis = millis();
+        //     buzzerStartMillis = millis();
+        //     buzzerPreviousMillis = millis();
 
-            buzzerState = true;
+        //     buzzerState = true;
 
-            digitalWrite(BUZZER_PIN, HIGH);
-        }
+        //     digitalWrite(BUZZER_PIN, HIGH);
+        // }
 
+        // buzzer water level
         if(
             waterAlert == AlertState::CRITICAL &&
             previousWaterAlert != AlertState::CRITICAL
@@ -269,40 +266,42 @@ void loop() {
             digitalWrite(BUZZER_PIN, HIGH);
         }
 
-        if(
-            tempAlert == AlertState::WARNING &&
-            previousTempAlert != AlertState::WARNING
-        )
-        {
-            buzzerActive = true;
+        // // buzzer temp
+        // if(
+        //     tempAlert == AlertState::WARNING &&
+        //     previousTempAlert != AlertState::WARNING
+        // )
+        // {
+        //     buzzerActive = true;
 
-            buzzerStartMillis = millis();
-            buzzerPreviousMillis = millis();
+        //     buzzerStartMillis = millis();
+        //     buzzerPreviousMillis = millis();
 
-            buzzerState = true;
+        //     buzzerState = true;
 
-            digitalWrite(BUZZER_PIN, HIGH);
-        }
+        //     digitalWrite(BUZZER_PIN, HIGH);
+        // }
 
-        if(
-            humAlert == AlertState::WARNING &&
-            previousHumAlert != AlertState::WARNING
-        )
-        {
-            buzzerActive = true;
+        // // buzzer hum
+        // if(
+        //     humAlert == AlertState::WARNING &&
+        //     previousHumAlert != AlertState::WARNING
+        // )
+        // {
+        //     buzzerActive = true;
 
-            buzzerStartMillis = millis();
-            buzzerPreviousMillis = millis();
+        //     buzzerStartMillis = millis();
+        //     buzzerPreviousMillis = millis();
 
-            buzzerState = true;
+        //     buzzerState = true;
 
-            digitalWrite(BUZZER_PIN, HIGH);
-        }
+        //     digitalWrite(BUZZER_PIN, HIGH);
+        // }
 
-        previousSoilAlert = soilAlert;
+        // previousSoilAlert = soilAlert;
         previousWaterAlert = waterAlert;
-        previousTempAlert = tempAlert;
-        previousHumAlert = humAlert;
+        // previousTempAlert = tempAlert;
+        // previousHumAlert = humAlert;
 
         controlPump();
 
@@ -313,11 +312,11 @@ void loop() {
         {
             uploadMonitoring();
 
-            applySnapshot(changed);
-
+            displayMonitoring(changed);
+            
             printSerialMonitor();
 
-            displayMonitoring(changed);
+            applySnapshot(changed);
         }
     }
 
@@ -488,7 +487,7 @@ void controlPump()
     {
         digitalWrite(RELAY_PIN, HIGH); // ON
     }
-    else
+    else if(current.soilPercent > 50)
     {
         digitalWrite(RELAY_PIN, LOW); // OFF
     }
